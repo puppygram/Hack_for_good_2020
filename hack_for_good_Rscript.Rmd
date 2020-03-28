@@ -38,11 +38,19 @@ library(lattice)
 
 ```{r import data, message=FALSE, warning=FALSE}
 #import
-dat = rbind(read_excel("brown_2020_3_27.xlsx") %>% 
+d1.dat = rbind(read_excel("brown_2020_3_27.xlsx") %>% 
               mutate(Color = "Brown"), read_excel("white_2020_3_27.xlsx") %>% 
               mutate(Color = "White")) %>% 
   mutate(Date = "3.27") %>% 
   select(-c(Version, `Date(GMT)`,`Time(GMT)`))
+
+d2.dat = rbind(read_excel("brown_2020_3_28.xlsx") %>% 
+              mutate(Color = "Brown"), read_excel("white_2020_3_28.xlsx") %>% 
+              mutate(Color = "White")) %>% 
+  mutate(Date = "3.28") %>% 
+  select(-c(Version, `Date(GMT)`,`Time(GMT)`))
+
+dat = rbind(d1.dat, d2.dat)
 
 #format
 dat = dat %>% 
@@ -55,7 +63,8 @@ dat = dat %>%
                          format = "%M")) %>% 
   mutate_at(vars(Hour, Minute), as.numeric) %>% 
   mutate(Hour_minute = as.numeric(Hour*60 + Minute)) %>%
-  dplyr::select(Date, Time, Hour, Minute, Hour_minute, Color, MotionMinute:Magnetometer)
+  dplyr::select(Date, Time, Hour, Minute, Hour_minute, Color, MotionMinute:Magnetometer) %>%
+  subset(Hour >= 7 & Hour <= 19)
 
 # aggregate into 1 h intervals
 hourly.dat <- dat %>%
@@ -66,14 +75,10 @@ hourly.dat <- dat %>%
 
 ```{r build model, message=FALSE, warning=FALSE}
 # model selection
-plot(hourly.dat$Hour, hourly.dat$MotionMinute)
-
 model = lm(MotionMinute ~ poly(Hour, 2)*Color, data = dat)
 
-anova(model, modelq)
-
-summary(model,  ddf = "Kenward-Roger")
-anova(model,  ddf = "Kenward-Roger")
+summary(model)
+anova(model)
 ```
 
 ```{r make data for predictions, message=FALSE, warning=FALSE}
@@ -85,56 +90,44 @@ predict.fun <- function(my.lm) {
 
 # predictions and bootstrap-based CIs
 newDat$fit <- predict.fun(model)
-boot.ci <- bootMer(model, predict.fun, nsim = 1000, seed = 1) 
+boot.ci <- Boot(object = model, f = predict.fun, R = 500) 
 newDat <- cbind(newDat, confint(boot.ci, type = "perc", level = .8))
 
-#rename feeders
-levels(newDat2$Feeder)[levels(newDat2$Feeder) == "Solid"] <- "Opaque"
-levels(newDat2$Feeder)[levels(newDat2$Feeder) == "Striped"] <- "Transparent"
-levels(dat2$Feeder)[levels(dat2$Feeder) == "Solid"] <- "Opaque"
-levels(dat2$Feeder)[levels(dat2$Feeder) == "Striped"] <- "Transparent"
-
-# max activity
-subset(newDat2, Feeder == "Opaque" & fit == max(subset(newDat2, Feeder == "Opaque")$fit))
-subset(newDat2, Feeder == "Transparent" & fit == max(subset(newDat2, Feeder == "Transparent")$fit))
-
 # figure
-  ggplot(data = dat2, 
-         aes(x = Hour, y = MotionMinute, color = Feeder)) + 
+  ggplot(data = hourly.dat, 
+         aes(x = Hour, y = MotionMinute, color = Color)) + 
   
   geom_point(size = 1.5, 
              show.legend = F) + 
   
-  geom_line(data = newDat2, 
-            aes(x = Hour, y = fit, group = Feeder), 
+  geom_line(data = newDat, 
+            aes(x = Hour, y = fit*60, group = Color), 
             size = 1) + 
   
-  labs(title = "Feeder preference",
-       x = "Time of day", 
+  labs(title = "Feeder color preference",
+       x = "Time of day, hour", 
        y = "Motion, seconds per hour",
        caption = "Fixed effects of hour (F(2, 18) = 20, p < .0001), feeder type (F(1, 176) = 19, p < .0001), \nand the hour x feeder type interaction (F(2, 176) = 4.2, p = .02)") +
   
   scale_y_continuous(breaks = seq(0, 300, 30), 
-                     limits = c(-20, 300), expand = c(0,0)) +
+                     limits = c(0, 300), expand = c(0,0)) +
   
   scale_x_continuous(breaks = seq(7, 18, 1), limits = c(6.5, 18.5), expand = c(0,0)) +
     
-  geom_ribbon(data = subset(newDat2, Feeder == "Opaque"), 
-              aes(x = Hour, ymin = `10 %`, ymax = `90 %`),
+  geom_ribbon(data = subset(newDat, Color == "Brown"), 
+              aes(x = Hour, ymin = `10 %`*60, ymax = `90 %`*60),
               fill = "light gray",
               alpha = 0.5, 
               inherit.aes = FALSE) +
   
-  geom_ribbon(data = subset(newDat2, Feeder == "Transparent"), 
-              aes(x = Hour, ymin = `10 %`, ymax = `90 %`),
+  geom_ribbon(data = subset(newDat, Color == "White"), 
+              aes(x = Hour, ymin = `10 %`*60, ymax = `90 %`*60),
               fill = "light gray",
               alpha = 0.5, 
               inherit.aes = FALSE) +
   
   theme_classic() +
     
-
-
   theme(plot.title = element_text(hjust = .5),
         axis.title = element_text(size = 14),
         plot.caption = element_text(size = 11, hjust = .5),   
@@ -226,8 +219,6 @@ subset(newDat2, Feeder == "Transparent" & fit == max(subset(newDat2, Feeder == "
   
   theme_classic() +
     
-
-
   theme(plot.title = element_text(hjust = .5),
         axis.title = element_text(size = 14),
         plot.caption = element_text(size = 11, hjust = .5),   
