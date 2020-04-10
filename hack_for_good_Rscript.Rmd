@@ -18,9 +18,9 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-	message = FALSE,
-	warning = FALSE,
-	include = FALSE
+  message = FALSE,
+  warning = FALSE,
+  include = FALSE
 )
 library(readr)
 library(tidyverse)
@@ -38,33 +38,53 @@ library(lattice)
 
 ```{r import data, message=FALSE, warning=FALSE}
 #import
-d1.dat = rbind(read_excel("brown_2020_3_27.xlsx") %>% 
-              mutate(Color = "Brown"), read_excel("white_2020_3_27.xlsx") %>% 
-              mutate(Color = "White")) %>% 
+d1.dat <- 
+  rbind(
+    read_excel("brown_2020_3_27.xlsx") %>% 
+      mutate(Color = "Brown"), 
+    read_excel("white_2020_3_27.xlsx") %>% 
+      mutate(Color = "White")
+  ) %>% 
   mutate(Date = "3.27") %>% 
   select(-c(Version, `Date(GMT)`,`Time(GMT)`))
 
-d2.dat = rbind(read_excel("brown_2020_3_28.xlsx") %>% 
-              mutate(Color = "Brown"), read_excel("white_2020_3_28.xlsx") %>% 
-              mutate(Color = "White")) %>% 
+d2.dat <- 
+  rbind(
+    read_excel("brown_2020_3_28.xlsx") %>% 
+      mutate(Color = "Brown"), 
+    read_excel("white_2020_3_28.xlsx") %>% 
+      mutate(Color = "White")
+  ) %>% 
   mutate(Date = "3.28") %>% 
   select(-c(Version, `Date(GMT)`,`Time(GMT)`))
 
-dat = rbind(d1.dat, d2.dat)
+dat <- rbind(d1.dat, d2.dat)
 
 #format
-dat = dat %>% 
+dat <- dat %>% 
   mutate_at(vars(Date, Color), as.factor) %>% 
-  mutate(Time = format(as.POSIXct(strptime(`Time(Loc)`, "%Y-%m-%d %H:%M:%S", tz = "")), 
-                       format = "%H:%M")) %>% 
-  mutate(Hour = format(as.POSIXct(strptime(`Time(Loc)`, "%Y-%m-%d %H:%M:%S", tz = "")), 
-                       format = "%H")) %>% 
-  mutate(Minute = format(as.POSIXct(strptime(`Time(Loc)`, "%Y-%m-%d %H:%M:%S", tz = "")), 
-                         format = "%M")) %>% 
+  mutate(Time = format(
+    as.POSIXct(strptime(`Time(Loc)`, 
+                        "%Y-%m-%d %H:%M:%S", 
+                        tz = "")), 
+    format = "%H:%M")
+  ) %>% 
+  mutate(Hour = format(
+    as.POSIXct(strptime(`Time(Loc)`, 
+                        "%Y-%m-%d %H:%M:%S", 
+                        tz = "")), 
+    format = "%H")
+  ) %>% 
+  mutate(Minute = format(
+    as.POSIXct(strptime(`Time(Loc)`, 
+                        "%Y-%m-%d %H:%M:%S", 
+                        tz = "")), 
+    format = "%M")
+  ) %>% 
   mutate_at(vars(Hour, Minute), as.numeric) %>% 
   mutate(Hour_minute = as.numeric(Hour*60 + Minute)) %>%
   dplyr::select(Date, Time, Hour, Minute, Hour_minute, Color, MotionMinute:Magnetometer) %>%
-  subset(Hour >= 7 & Hour <= 19)
+  subset(Hour >= 7 & Hour <= 20)
 
 # aggregate into 1 h intervals
 hourly.dat <- dat %>%
@@ -75,14 +95,14 @@ hourly.dat <- dat %>%
 
 ```{r build model, message=FALSE, warning=FALSE}
 # model selection
-model = lm(MotionMinute ~ poly(Hour, 2)*Color, data = dat)
+model <- lm(MotionMinute ~ poly(Hour, 2)*Color, data = dat)
 
 summary(model)
 anova(model)
 ```
 
 ```{r make data for predictions, message=FALSE, warning=FALSE}
-newDat = data.frame(Hour = rep(7:18, 2), Color = c(rep("White", 12), rep("Brown", 12)))
+newDat <- data.frame(Hour = rep(7:20, 2), Color = c(rep("White", 14), rep("Brown", 14)))
 
 predict.fun <- function(my.lm) {
   predict(my.lm, newdata = newDat)
@@ -94,54 +114,76 @@ boot.ci <- Boot(object = model, f = predict.fun, R = 500)
 newDat <- cbind(newDat, confint(boot.ci, type = "perc", level = .8))
 
 # figure
-  ggplot(data = hourly.dat, 
-         aes(x = Hour, y = MotionMinute, color = Color)) + 
+ggplot(
+  data = hourly.dat, 
+  aes(x = Hour, y = MotionMinute, color = Color)
+) + 
   
-  geom_point(size = 1.5, 
-             show.legend = F) + 
+  geom_point(
+    size = 1.5, 
+    show.legend = F
+  ) + 
   
-  geom_line(data = newDat, 
-            aes(x = Hour, y = fit*60, group = Color), 
-            size = 1) + 
+  geom_line(
+    data = newDat, 
+    aes(x = Hour, y = fit*60, group = Color), 
+    size = 1
+  ) + 
   
-  labs(title = "Feeder color preference",
-       x = "Time of day, hour", 
-       y = "Motion, seconds per hour",
-       caption = "Fixed effects of hour (F(2, 18) = 20, p < .0001), feeder type (F(1, 176) = 19, p < .0001), \nand the hour x feeder type interaction (F(2, 176) = 4.2, p = .02)") +
+  labs(
+    title = "Feeder color preference",
+    x = "Time of day, hour", 
+    y = "Motion, seconds per hour",
+    caption = "Fixed effects of hour (p < .0001), feeder type (p = .004), \nand the hour x feeder type interaction (p = .0003)"
+  ) +
   
-  scale_y_continuous(breaks = seq(0, 300, 30), 
-                     limits = c(0, 300), expand = c(0,0)) +
+  scale_y_continuous(
+    breaks = seq(0, 210, 30), 
+    limits = c(0, 210), 
+    expand = c(0,0)
+  ) +
   
-  scale_x_continuous(breaks = seq(7, 18, 1), limits = c(6.5, 18.5), expand = c(0,0)) +
-    
-  geom_ribbon(data = subset(newDat, Color == "Brown"), 
-              aes(x = Hour, ymin = `10 %`*60, ymax = `90 %`*60),
-              fill = "light gray",
-              alpha = 0.5, 
-              inherit.aes = FALSE) +
+  scale_x_continuous(
+    breaks = seq(7, 20, 1), 
+    limits = c(6.5, 20.5), 
+    expand = c(0,0)
+  ) +
   
-  geom_ribbon(data = subset(newDat, Color == "White"), 
-              aes(x = Hour, ymin = `10 %`*60, ymax = `90 %`*60),
-              fill = "light gray",
-              alpha = 0.5, 
-              inherit.aes = FALSE) +
+  geom_ribbon(
+    data = subset(newDat, Color == "Brown"), 
+    aes(x = Hour, ymin = `10 %`*60, ymax = `90 %`*60),
+    fill = "light gray",
+    alpha = 0.5, 
+    inherit.aes = FALSE
+  ) +
+  
+  geom_ribbon(
+    data = subset(newDat, Color == "White"), 
+    aes(x = Hour, ymin = `10 %`*60, ymax = `90 %`*60),
+    fill = "light gray",
+    alpha = 0.5, 
+    inherit.aes = FALSE
+  ) +
   
   theme_classic() +
-    
-  theme(plot.title = element_text(hjust = .5),
-        axis.title = element_text(size = 14),
-        plot.caption = element_text(size = 11, hjust = .5),   
-        axis.text = element_text(size = 11, colour = "black"),
-        legend.position = c(.2, .90),
-        legend.title = element_blank(),
-        legend.direction = "vertical",
-        legend.text = element_text(size = 11))
+  
+  theme(
+    plot.title = element_text(hjust = .5),
+    axis.title = element_text(size = 14),
+    plot.caption = element_text(size = 11, hjust = .5),   
+    axis.text = element_text(size = 11, colour = "black"),
+    legend.position = c(.2, .90),
+    legend.title = element_blank(),
+    legend.direction = "vertical",
+    legend.text = element_text(size = 11)
+  )
 
 ```
 
 #everything past here is from the opaque vs transparent feeder study
 ```{r import data, message=FALSE, warning=FALSE}
-dat2 = read_excel("bird_preference_data.xlsx") %>%
+dat2 <- 
+  read_excel("bird_preference_data.xlsx") %>%
   select(-c(Date, Time_min)) %>%
   mutate_at(vars(Day, Feeder, Side, Location), as.factor) %>%
   subset(Hour >= 7 & Hour <= 18) %>% #cutoff from 7am to 6pm
@@ -156,14 +198,26 @@ dat2 = read_excel("bird_preference_data.xlsx") %>%
 
 ```{r build model, message=FALSE, warning=FALSE}
 # model selection
-model2 = lmer(MotionMinute ~ poly(Hour, 2)*Feeder + (Hour|Day) , data = dat2, REML = TRUE, control = lmerControl(optimizer = "bobyqa"))
+model2 <- 
+  lmer(
+    MotionMinute ~ poly(Hour, 2)*Feeder + (Hour|Day) , 
+    data = dat2, 
+    REML = TRUE, 
+    control = lmerControl(optimizer = "bobyqa")
+  )
 
 summary(model2,  ddf = "Kenward-Roger")
 anova(model2,  ddf = "Kenward-Roger")
 ```
 
 ```{r make data for predictions, message=FALSE, warning=FALSE}
-newDat2 = data.frame(Hour = rep(7:18, 2), Feeder = c(rep("Solid", 12), rep("Striped", 12)), Day = NA)
+newDat2 <- 
+  data.frame(
+    Hour = rep(7:18, 2), 
+    Feeder = c(rep("Solid", 12), 
+               rep("Striped", 12)), 
+    Day = NA
+  )
 
 predict.fun2 <- function(my.lmm) {
   predict(my.lmm, newdata = newDat2, re.form = NA)   # re.form = NA excludes random effects 
@@ -185,47 +239,68 @@ subset(newDat2, Feeder == "Opaque" & fit == max(subset(newDat2, Feeder == "Opaqu
 subset(newDat2, Feeder == "Transparent" & fit == max(subset(newDat2, Feeder == "Transparent")$fit))
 
 # figure
-  ggplot(data = dat2, 
-         aes(x = Hour, y = MotionMinute, color = Feeder)) + 
+ggplot(
+  data = dat2, 
+  aes(x = Hour, y = MotionMinute, color = Feeder)
+) + 
   
-  geom_point(size = 1.5, 
-             show.legend = F) + 
+  geom_point(
+    size = 1.5, 
+    show.legend = F
+  ) + 
   
-  geom_line(data = newDat2, 
-            aes(x = Hour, y = fit, group = Feeder), 
-            size = 1) + 
+  geom_line(
+    data = newDat2, 
+    aes(x = Hour, y = fit, group = Feeder), 
+    size = 1
+  ) + 
   
-  labs(title = "Feeder preference",
-       x = "Time of day", 
-       y = "Motion, seconds per hour",
-       caption = "Fixed effects of hour (F(2, 18) = 20, p < .0001), feeder type (F(1, 176) = 19, p < .0001), \nand the hour x feeder type interaction (F(2, 176) = 4.2, p = .02)") +
+  labs(
+    title = "Feeder preference",
+    x = "Time of day", 
+    y = "Motion, seconds per hour",
+    caption = "Fixed effects of hour (F(2, 18) = 20, p < .0001), feeder type (F(1, 176) = 19, p < .0001), \nand the hour x feeder type interaction (F(2, 176) = 4.2, p = .02)"
+  ) +
   
-  scale_y_continuous(breaks = seq(0, 300, 30), 
-                     limits = c(-20, 300), expand = c(0,0)) +
+  scale_y_continuous(
+    breaks = seq(0, 300, 30), 
+    limits = c(-20, 300), 
+    expand = c(0,0)
+  ) +
   
-  scale_x_continuous(breaks = seq(7, 18, 1), limits = c(6.5, 18.5), expand = c(0,0)) +
-    
-  geom_ribbon(data = subset(newDat2, Feeder == "Opaque"), 
-              aes(x = Hour, ymin = `10 %`, ymax = `90 %`),
-              fill = "light gray",
-              alpha = 0.5, 
-              inherit.aes = FALSE) +
+  scale_x_continuous(
+    breaks = seq(7, 18, 1), 
+    limits = c(6.5, 18.5), 
+    expand = c(0,0)
+  ) +
   
-  geom_ribbon(data = subset(newDat2, Feeder == "Transparent"), 
-              aes(x = Hour, ymin = `10 %`, ymax = `90 %`),
-              fill = "light gray",
-              alpha = 0.5, 
-              inherit.aes = FALSE) +
+  geom_ribbon(
+    data = subset(newDat2, Feeder == "Opaque"), 
+    aes(x = Hour, ymin = `10 %`, ymax = `90 %`),
+    fill = "light gray",
+    alpha = 0.5, 
+    inherit.aes = FALSE
+  ) +
+  
+  geom_ribbon(
+    data = subset(newDat2, Feeder == "Transparent"), 
+    aes(x = Hour, ymin = `10 %`, ymax = `90 %`),
+    fill = "light gray",
+    alpha = 0.5, 
+    inherit.aes = FALSE
+  ) +
   
   theme_classic() +
-    
-  theme(plot.title = element_text(hjust = .5),
-        axis.title = element_text(size = 14),
-        plot.caption = element_text(size = 11, hjust = .5),   
-        axis.text = element_text(size = 11, colour = "black"),
-        legend.position = c(.2, .90),
-        legend.title = element_blank(),
-        legend.direction = "vertical",
-        legend.text = element_text(size = 11))
+  
+  theme(
+    plot.title = element_text(hjust = .5),
+    axis.title = element_text(size = 14),
+    plot.caption = element_text(size = 11, hjust = .5),   
+    axis.text = element_text(size = 11, colour = "black"),
+    legend.position = c(.2, .90),
+    legend.title = element_blank(),
+    legend.direction = "vertical",
+    legend.text = element_text(size = 11)
+  )
 
 ```
